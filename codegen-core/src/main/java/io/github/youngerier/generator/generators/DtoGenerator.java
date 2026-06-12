@@ -14,13 +14,29 @@ public class DtoGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
-        TypeSpec.Builder classBuilder = createClassBuilder(getClassName(classMetadata));
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
+        return createClassBuilder(className);
+    }
 
-        addClassJavadoc(classBuilder, classMetadata, "数据传输对象(DTO)");
-        addAllFields(classBuilder, classMetadata.getFields());
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // @Data 已在 createClassBuilder 中添加
+    }
 
-        return classBuilder.build();
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        addAllFields(builder, classMetadata.getFields());
+    }
+
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // DTO 不需要额外方法
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "数据传输对象(DTO)");
     }
 
     @Override

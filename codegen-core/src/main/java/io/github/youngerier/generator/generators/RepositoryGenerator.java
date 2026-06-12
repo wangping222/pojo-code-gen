@@ -26,23 +26,33 @@ public class RepositoryGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
         ClassName entityType = getEntityType(classMetadata);
-        ClassName mapperType = ClassName.get(packageStructure.getMapperPackage(), packageStructure.getMapperClassName());
+        ClassName mapperType = getMapperType();
         ClassName serviceImplType = ClassName.get("com.mybatisflex.spring.service.impl", "ServiceImpl");
         ClassName serviceType = ClassName.get("com.mybatisflex.core.service", "IService");
 
-        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(getClassName(classMetadata))
+        return TypeSpec.classBuilder(className)
                 .addModifiers(Modifier.PUBLIC)
                 .superclass(ParameterizedTypeName.get(serviceImplType, mapperType, entityType))
                 .addSuperinterface(ParameterizedTypeName.get(serviceType, entityType));
+    }
 
-        addClassJavadoc(classBuilder, classMetadata, "数据访问层实现类");
-        classBuilder.addMethod(buildQueryWrapperMethod(classMetadata));
-        classBuilder.addMethod(buildSelectListByQueryMethod(classMetadata));
-        classBuilder.addMethod(buildPageMethod(classMetadata));
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // 无注解
+    }
 
-        return classBuilder.build();
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // 无字段
+    }
+
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        builder.addMethod(buildQueryWrapperMethod(classMetadata));
+        builder.addMethod(buildSelectListByQueryMethod(classMetadata));
+        builder.addMethod(buildPageMethod(classMetadata));
     }
 
     private MethodSpec buildSelectListByQueryMethod(ClassMetadata classMetadata) {
@@ -73,7 +83,8 @@ public class RepositoryGenerator extends AbstractClassGenerator {
 
     private MethodSpec buildQueryWrapperMethod(ClassMetadata classMetadata) {
         ClassName queryType = getQueryType(classMetadata);
-        ClassName tableRefs = ClassName.get(classMetadata.getPackageName() + ".table", classMetadata.getClassName() + "TableRefs");
+        ClassName tableRefs = ClassName.get(classMetadata.getPackageName() + ".table",
+                classMetadata.getClassName() + "TableRefs");
         String tableVarName = StringCaseUtils.lowerFirstChar(classMetadata.getClassName()) + "TableRefs";
 
         MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder("buildQueryWrapper")
@@ -112,9 +123,14 @@ public class RepositoryGenerator extends AbstractClassGenerator {
         }
 
         queryWrapperBuilder.unindent();
-
         methodBuilder.addCode(queryWrapperBuilder.build());
         return methodBuilder.build();
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "数据访问层实现类");
     }
 
     @Override

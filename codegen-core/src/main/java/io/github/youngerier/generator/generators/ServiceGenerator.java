@@ -3,7 +3,6 @@ package io.github.youngerier.generator.generators;
 import io.github.youngerier.support.Pagination;
 import io.github.youngerier.generator.model.PackageStructure;
 import io.github.youngerier.generator.model.ClassMetadata;
-import io.github.youngerier.generator.util.StringCaseUtils;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
@@ -23,25 +22,30 @@ public class ServiceGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
-        String entityName = classMetadata.getClassName();
-        String camelEntityName = classMetadata.getCamelClassName();
-        ClassName dtoType = ClassName.get(packageStructure.getDtoPackage(), packageStructure.getDtoClassName());
-        ParameterizedTypeName listOfDto = ParameterizedTypeName.get(ClassName.get(List.class), dtoType);
-        ClassName queryType = ClassName.get(packageStructure.getRequestPackage(), packageStructure.getQueryClassName());
-
-        TypeSpec.Builder interfaceBuilder = createInterfaceBuilder(getClassName(classMetadata));
-
-        addClassJavadoc(interfaceBuilder, classMetadata, "服务接口");
-        addServiceMethods(interfaceBuilder, entityName, camelEntityName, dtoType, listOfDto, queryType);
-
-        return interfaceBuilder.build();
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
+        return createInterfaceBuilder(className);
     }
 
-    private void addServiceMethods(TypeSpec.Builder interfaceBuilder, String entityName, String camelEntityName,
-                                    ClassName dtoType, ParameterizedTypeName listOfDto, ClassName queryType) {
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // 接口无注解
+    }
+
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // 接口无字段
+    }
+
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        String entityName = classMetadata.getClassName();
+        String camelEntityName = classMetadata.getCamelClassName();
+        ClassName dtoType = getDtoType();
+        ParameterizedTypeName listOfDto = ParameterizedTypeName.get(ClassName.get(List.class), dtoType);
+        ClassName queryType = getQueryType(classMetadata);
+
         // createXxx
-        interfaceBuilder.addMethod(MethodSpec.methodBuilder("create" + entityName)
+        builder.addMethod(MethodSpec.methodBuilder("create" + entityName)
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .returns(dtoType)
                 .addParameter(dtoType, camelEntityName + "DTO")
@@ -51,7 +55,7 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .build());
 
         // getXxxById
-        interfaceBuilder.addMethod(MethodSpec.methodBuilder("get" + entityName + "ById")
+        builder.addMethod(MethodSpec.methodBuilder("get" + entityName + "ById")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .returns(dtoType)
                 .addParameter(TypeName.LONG, "id")
@@ -61,7 +65,7 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .build());
 
         // queryXxxs
-        interfaceBuilder.addMethod(MethodSpec.methodBuilder("query" + entityName + "s")
+        builder.addMethod(MethodSpec.methodBuilder("query" + entityName + "s")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .returns(listOfDto)
                 .addParameter(queryType, "query")
@@ -70,7 +74,7 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .build());
 
         // pageQueryXxxs
-        interfaceBuilder.addMethod(MethodSpec.methodBuilder("pageQuery" + entityName + "s")
+        builder.addMethod(MethodSpec.methodBuilder("pageQuery" + entityName + "s")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .returns(ParameterizedTypeName.get(ClassName.get(Pagination.class), dtoType))
                 .addParameter(queryType, "query")
@@ -79,7 +83,7 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .build());
 
         // updateXxx
-        interfaceBuilder.addMethod(MethodSpec.methodBuilder("update" + entityName)
+        builder.addMethod(MethodSpec.methodBuilder("update" + entityName)
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .returns(dtoType)
                 .addParameter(TypeName.LONG, "id")
@@ -91,7 +95,7 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .build());
 
         // deleteXxx
-        interfaceBuilder.addMethod(MethodSpec.methodBuilder("delete" + entityName)
+        builder.addMethod(MethodSpec.methodBuilder("delete" + entityName)
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(TypeName.LONG, "id")
@@ -99,6 +103,12 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .addJavadoc("@param id 主键ID\n")
                 .addJavadoc("@return 是否删除成功\n")
                 .build());
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "服务接口");
     }
 
     @Override

@@ -14,13 +14,29 @@ public class ResponseGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
-        TypeSpec.Builder classBuilder = createClassBuilder(getClassName(classMetadata));
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
+        return createClassBuilder(className);
+    }
 
-        addAllFields(classBuilder, classMetadata.getFields());
-        addClassJavadoc(classBuilder, classMetadata, "响应对象");
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // @Data 已在 createClassBuilder 中添加
+    }
 
-        return classBuilder.build();
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        addAllFields(builder, classMetadata.getFields());
+    }
+
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // Response 不需要额外方法
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "响应对象");
     }
 
     @Override

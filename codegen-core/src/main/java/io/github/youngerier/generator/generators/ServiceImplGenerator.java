@@ -22,125 +22,124 @@ public class ServiceImplGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
-        String entityName = classMetadata.getClassName();
-        String camelEntityName = classMetadata.getCamelClassName();
-
-        ClassName entityType = getEntityType(classMetadata);
-        ClassName dtoType = ClassName.get(packageStructure.getDtoPackage(), packageStructure.getDtoClassName());
-        ClassName serviceType = ClassName.get(packageStructure.getServicePackage(), packageStructure.getServiceClassName());
-        ClassName repositoryType = ClassName.get(packageStructure.getRepositoryPackage(), packageStructure.getRepositoryClassName());
-        ClassName mapperType = ClassName.get(packageStructure.getConvertorPackage(), packageStructure.getConvertorClassName());
-
-        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(getClassName(classMetadata))
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
+        ClassName serviceType = getServiceType();
+        return TypeSpec.classBuilder(className)
                 .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(ClassName.get("org.springframework.stereotype", "Service"))
+                .addAnnotation(createServiceAnnotation())
                 .addSuperinterface(serviceType);
-
-        addClassJavadoc(classBuilder, classMetadata, "服务实现类");
-        addRepositoryAndMapperFields(classBuilder, camelEntityName, repositoryType, mapperType);
-        addConstructor(classBuilder, camelEntityName, repositoryType);
-        addServiceMethods(classBuilder, entityName, camelEntityName, entityType, dtoType, repositoryType, mapperType);
-
-        return classBuilder.build();
     }
 
-    private void addRepositoryAndMapperFields(TypeSpec.Builder classBuilder, String camelEntityName,
-                                               ClassName repositoryType, ClassName mapperType) {
-        classBuilder.addField(FieldSpec.builder(repositoryType, camelEntityName + "Repository")
-                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                .build());
-
-        classBuilder.addField(FieldSpec.builder(mapperType, camelEntityName + "Convertor")
-                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                .initializer("$T.INSTANCE", mapperType)
-                .build());
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // @Service 已在 createTypeBuilder 中添加
     }
 
-    private void addConstructor(TypeSpec.Builder classBuilder, String camelEntityName, ClassName repositoryType) {
-        String repositoryFieldName = camelEntityName + "Repository";
-        classBuilder.addMethod(MethodSpec.constructorBuilder()
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        String camelEntityName = classMetadata.getCamelClassName();
+        ClassName repositoryType = getRepositoryType();
+        ClassName convertorType = getConvertorType();
+
+        builder.addField(FieldSpec.builder(repositoryType, camelEntityName + "Repository")
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL).build());
+
+        builder.addField(FieldSpec.builder(convertorType, camelEntityName + "Convertor")
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("$T.INSTANCE", convertorType).build());
+    }
+
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        addConstructor(builder, classMetadata);
+        addCrudMethods(builder, classMetadata);
+    }
+
+    private void addConstructor(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        String repositoryFieldName = getRepositoryFieldName(classMetadata);
+        ClassName repositoryType = getRepositoryType();
+
+        builder.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(repositoryType, repositoryFieldName)
                 .addStatement("this.$N = $N", repositoryFieldName, repositoryFieldName)
                 .build());
     }
 
-    private void addServiceMethods(TypeSpec.Builder classBuilder, String entityName, String camelEntityName,
-                                    ClassName entityType, ClassName dtoType,
-                                    ClassName repositoryType, ClassName mapperType) {
-        String repositoryFieldName = camelEntityName + "Repository";
-        String mapperFieldName = camelEntityName + "Convertor";
+    private void addCrudMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        String entityName = classMetadata.getClassName();
+        String camelEntityName = classMetadata.getCamelClassName();
+        String repositoryFieldName = getRepositoryFieldName(classMetadata);
+        String convertorFieldName = getConvertorFieldName(classMetadata);
+
+        ClassName entityType = getEntityType(classMetadata);
+        ClassName dtoType = getDtoType();
+        ClassName queryType = getQueryType(classMetadata);
 
         // createXxx
-        classBuilder.addMethod(MethodSpec.methodBuilder("create" + entityName)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(Override.class)
-                .addParameter(dtoType, camelEntityName + "DTO")
-                .returns(dtoType)
-                .addStatement("$T entity = $N.toEntity($N)", entityType, mapperFieldName, camelEntityName + "DTO")
+        builder.addMethod(MethodSpec.methodBuilder("create" + entityName)
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
+                .addParameter(dtoType, camelEntityName + "DTO").returns(dtoType)
+                .addStatement("$T entity = $N.toEntity($N)", entityType, convertorFieldName, camelEntityName + "DTO")
                 .addStatement("$N.save(entity)", repositoryFieldName)
-                .addStatement("return $N.toDto(entity)", mapperFieldName)
+                .addStatement("return $N.toDto(entity)", convertorFieldName)
                 .build());
 
         // getXxxById
-        classBuilder.addMethod(MethodSpec.methodBuilder("get" + entityName + "ById")
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(Override.class)
-                .addParameter(TypeName.LONG, "id")
-                .returns(dtoType)
+        builder.addMethod(MethodSpec.methodBuilder("get" + entityName + "ById")
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
+                .addParameter(TypeName.LONG, "id").returns(dtoType)
                 .addStatement("$T entity = $N.getById(id)", entityType, repositoryFieldName)
-                .addStatement("return $N.toDto(entity)", mapperFieldName)
+                .addStatement("return $N.toDto(entity)", convertorFieldName)
                 .build());
 
         // queryXxxs
         ParameterizedTypeName listOfDto = ParameterizedTypeName.get(ClassName.get(List.class), dtoType);
-        ClassName queryType = ClassName.get(packageStructure.getRequestPackage(), entityName + "Query");
-        classBuilder.addMethod(MethodSpec.methodBuilder("query" + entityName + "s")
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(Override.class)
-                .addParameter(queryType, "query")
-                .returns(listOfDto)
+        builder.addMethod(MethodSpec.methodBuilder("query" + entityName + "s")
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
+                .addParameter(queryType, "query").returns(listOfDto)
                 .addStatement("return $N.selectListByQuery(query).stream().map($N::toDto).collect($T.toList())",
-                        repositoryFieldName, mapperFieldName, Collectors.class)
+                        repositoryFieldName, convertorFieldName, Collectors.class)
                 .build());
 
         // pageQueryXxxs
         ClassName pageType = ClassName.get("com.mybatisflex.core.paginate", "Page");
-        classBuilder.addMethod(MethodSpec.methodBuilder("pageQuery" + entityName + "s")
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(Override.class)
+        builder.addMethod(MethodSpec.methodBuilder("pageQuery" + entityName + "s")
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
                 .addParameter(queryType, "query")
                 .returns(ParameterizedTypeName.get(ClassName.get(Pagination.class), dtoType))
-                .addStatement("$T<$T> page = $N.page(query).map($N::toDto)", pageType, dtoType, repositoryFieldName, mapperFieldName)
+                .addStatement("$T<$T> page = $N.page(query).map($N::toDto)",
+                        pageType, dtoType, repositoryFieldName, convertorFieldName)
                 .addStatement("return $T.of(page.getRecords(), query, page.getTotalRow())", Pagination.class)
                 .build());
 
         // updateXxx
-        classBuilder.addMethod(MethodSpec.methodBuilder("update" + entityName)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(Override.class)
+        builder.addMethod(MethodSpec.methodBuilder("update" + entityName)
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
                 .addParameter(TypeName.LONG, "id")
-                .addParameter(dtoType, camelEntityName + "DTO")
-                .returns(dtoType)
+                .addParameter(dtoType, camelEntityName + "DTO").returns(dtoType)
                 .addStatement("$T existingEntity = $N.getById(id)", entityType, repositoryFieldName)
                 .beginControlFlow("if (existingEntity == null)")
                 .addStatement("return null")
                 .endControlFlow()
-                .addStatement("$T updatedEntity = $N.toEntity($N)", entityType, mapperFieldName, camelEntityName + "DTO")
+                .addStatement("$T updatedEntity = $N.toEntity($N)", entityType, convertorFieldName, camelEntityName + "DTO")
                 .addStatement("updatedEntity.setId(id)")
                 .addStatement("$N.updateById(updatedEntity)", repositoryFieldName)
-                .addStatement("return $N.toDto(updatedEntity)", mapperFieldName)
+                .addStatement("return $N.toDto(updatedEntity)", convertorFieldName)
                 .build());
 
         // deleteXxx
-        classBuilder.addMethod(MethodSpec.methodBuilder("delete" + entityName)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(Override.class)
-                .addParameter(long.class, "id")
-                .returns(TypeName.BOOLEAN)
+        builder.addMethod(MethodSpec.methodBuilder("delete" + entityName)
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
+                .addParameter(long.class, "id").returns(TypeName.BOOLEAN)
                 .addStatement("return $N.removeById(id)", repositoryFieldName)
                 .build());
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "服务实现类");
     }
 
     @Override

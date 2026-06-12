@@ -22,98 +22,93 @@ public class MapstructGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
-        String entityName = classMetadata.getClassName();
-        String camelEntityName = StringCaseUtils.lowerFirstChar(entityName);
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
+        return createInterfaceBuilder(className)
+                .addAnnotation(ClassName.get("org.mapstruct", "Mapper"));
+    }
 
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // @Mapper 已在 createTypeBuilder 中添加
+    }
+
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        ClassName convertorType = getConvertorType();
+        builder.addField(FieldSpec.builder(convertorType, "INSTANCE")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getMapper($T.class)",
+                        ClassName.get("org.mapstruct.factory", "Mappers"), convertorType)
+                .build());
+    }
+
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        String camelEntityName = classMetadata.getCamelClassName();
         ClassName entityType = getEntityType(classMetadata);
-        ClassName dtoType = ClassName.get(packageStructure.getDtoPackage(), packageStructure.getDtoClassName());
-        ClassName requestType = ClassName.get(packageStructure.getRequestPackage(), packageStructure.getRequestClassName());
-        ClassName responseType = ClassName.get(packageStructure.getResponsePackage(), packageStructure.getResponseClassName());
+        ClassName dtoType = getDtoType();
+        ClassName requestType = getRequestType();
+        ClassName responseType = getResponseType();
 
         ParameterizedTypeName listOfEntity = ParameterizedTypeName.get(ClassName.get(List.class), entityType);
         ParameterizedTypeName listOfDto = ParameterizedTypeName.get(ClassName.get(List.class), dtoType);
         ParameterizedTypeName listOfResponse = ParameterizedTypeName.get(ClassName.get(List.class), responseType);
 
-        TypeSpec.Builder interfaceBuilder = createInterfaceBuilder(getClassName(classMetadata))
-                .addAnnotation(ClassName.get("org.mapstruct", "Mapper"));
-
-        // 添加INSTANCE常量
-        ClassName convertorType = ClassName.get(packageStructure.getConvertorPackage(), getClassName(classMetadata));
-        interfaceBuilder.addField(FieldSpec.builder(convertorType, "INSTANCE")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$T.getMapper($T.class)",
-                        ClassName.get("org.mapstruct.factory", "Mappers"), convertorType)
-                .build());
-
-        // 添加转换方法
-        interfaceBuilder.addMethod(createToDtoMethod(entityType, dtoType, camelEntityName));
-        interfaceBuilder.addMethod(createToDtoFromRequestMethod(requestType, dtoType, camelEntityName));
-        interfaceBuilder.addMethod(createToEntityMethod(dtoType, entityType, camelEntityName));
-        interfaceBuilder.addMethod(createToEntityFromRequestMethod(requestType, entityType, camelEntityName));
-        interfaceBuilder.addMethod(createToResponseMethod(entityType, responseType, camelEntityName));
-        interfaceBuilder.addMethod(createToDtoListMethod(listOfEntity, listOfDto, camelEntityName));
-        interfaceBuilder.addMethod(createToResponseListMethod(listOfEntity, listOfResponse, camelEntityName));
-
-        addClassJavadoc(interfaceBuilder, classMetadata, "对象转换器");
-
-        return interfaceBuilder.build();
+        builder.addMethod(createToDtoMethod(entityType, dtoType, camelEntityName));
+        builder.addMethod(createToDtoFromRequestMethod(requestType, dtoType, camelEntityName));
+        builder.addMethod(createToEntityMethod(dtoType, entityType, camelEntityName));
+        builder.addMethod(createToEntityFromRequestMethod(requestType, entityType, camelEntityName));
+        builder.addMethod(createToResponseMethod(entityType, responseType, camelEntityName));
+        builder.addMethod(createToDtoListMethod(listOfEntity, listOfDto, camelEntityName));
+        builder.addMethod(createToResponseListMethod(listOfEntity, listOfResponse, camelEntityName));
     }
 
-    private MethodSpec createToDtoMethod(ClassName entityType, ClassName dtoType, String camelEntityName) {
+    private MethodSpec createToDtoMethod(ClassName entityType, ClassName dtoType, String name) {
         return MethodSpec.methodBuilder("toDto")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(entityType, camelEntityName)
-                .returns(dtoType)
-                .build();
+                .addParameter(entityType, name).returns(dtoType).build();
     }
 
-    private MethodSpec createToDtoFromRequestMethod(ClassName requestType, ClassName dtoType, String camelEntityName) {
+    private MethodSpec createToDtoFromRequestMethod(ClassName requestType, ClassName dtoType, String name) {
         return MethodSpec.methodBuilder("toDto")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(requestType, camelEntityName + "Request")
-                .returns(dtoType)
-                .build();
+                .addParameter(requestType, name + "Request").returns(dtoType).build();
     }
 
-    private MethodSpec createToEntityMethod(ClassName dtoType, ClassName entityType, String camelEntityName) {
+    private MethodSpec createToEntityMethod(ClassName dtoType, ClassName entityType, String name) {
         return MethodSpec.methodBuilder("toEntity")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(dtoType, camelEntityName + "DTO")
-                .returns(entityType)
-                .build();
+                .addParameter(dtoType, name + "DTO").returns(entityType).build();
     }
 
-    private MethodSpec createToEntityFromRequestMethod(ClassName requestType, ClassName entityType, String camelEntityName) {
+    private MethodSpec createToEntityFromRequestMethod(ClassName requestType, ClassName entityType, String name) {
         return MethodSpec.methodBuilder("toEntity")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(requestType, camelEntityName + "Request")
-                .returns(entityType)
-                .build();
+                .addParameter(requestType, name + "Request").returns(entityType).build();
     }
 
-    private MethodSpec createToResponseMethod(ClassName entityType, ClassName responseType, String camelEntityName) {
+    private MethodSpec createToResponseMethod(ClassName entityType, ClassName responseType, String name) {
         return MethodSpec.methodBuilder("toResponse")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(entityType, camelEntityName)
-                .returns(responseType)
-                .build();
+                .addParameter(entityType, name).returns(responseType).build();
     }
 
-    private MethodSpec createToDtoListMethod(ParameterizedTypeName listOfEntity, ParameterizedTypeName listOfDto, String camelEntityName) {
+    private MethodSpec createToDtoListMethod(ParameterizedTypeName listOfEntity, ParameterizedTypeName listOfDto, String name) {
         return MethodSpec.methodBuilder("toDtoList")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(listOfEntity, camelEntityName + "List")
-                .returns(listOfDto)
-                .build();
+                .addParameter(listOfEntity, name + "List").returns(listOfDto).build();
     }
 
-    private MethodSpec createToResponseListMethod(ParameterizedTypeName listOfEntity, ParameterizedTypeName listOfResponse, String camelEntityName) {
+    private MethodSpec createToResponseListMethod(ParameterizedTypeName listOfEntity, ParameterizedTypeName listOfResponse, String name) {
         return MethodSpec.methodBuilder("toResponseList")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addParameter(listOfEntity, camelEntityName + "List")
-                .returns(listOfResponse)
-                .build();
+                .addParameter(listOfEntity, name + "List").returns(listOfResponse).build();
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "对象转换器");
     }
 
     @Override

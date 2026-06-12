@@ -26,21 +26,33 @@ public class QueryGenerator extends AbstractClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata classMetadata) {
-        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(getClassName(classMetadata))
+    protected TypeSpec.Builder createTypeBuilder(String className, ClassMetadata classMetadata) {
+        return TypeSpec.classBuilder(className)
                 .addModifiers(Modifier.PUBLIC)
-                .superclass(ParameterizedTypeName.get(ClassName.get(AbstractPageQuery.class), ClassName.get(DefaultOrderField.class)))
+                .superclass(ParameterizedTypeName.get(
+                        ClassName.get(AbstractPageQuery.class),
+                        ClassName.get(DefaultOrderField.class)))
                 .addAnnotation(ClassName.get("lombok", "Data"));
+    }
 
-        addAllFields(classBuilder, classMetadata.getFields());
-        addClassJavadoc(classBuilder, classMetadata, "查询参数对象");
+    @Override
+    protected void addAnnotations(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // @Data 已在 createTypeBuilder 中添加
+    }
+
+    @Override
+    protected void addFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        addAllFields(builder, classMetadata.getFields());
 
         // 只有实体包含时间字段时才添加时间范围查询字段
         if (hasTimeRangeFields(classMetadata)) {
-            addTimeRangeFields(classBuilder, classMetadata);
+            addTimeRangeFields(builder, classMetadata);
         }
+    }
 
-        return classBuilder.build();
+    @Override
+    protected void addMethods(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        // Query 不需要额外方法
     }
 
     private boolean hasTimeRangeFields(ClassMetadata classMetadata) {
@@ -48,24 +60,30 @@ public class QueryGenerator extends AbstractClassGenerator {
                 .anyMatch(f -> TIME_RANGE_FIELDS.contains(f.getName()));
     }
 
-    private void addTimeRangeFields(TypeSpec.Builder classBuilder, ClassMetadata classMetadata) {
+    private void addTimeRangeFields(TypeSpec.Builder builder, ClassMetadata classMetadata) {
         boolean hasGmtCreate = classMetadata.getFields().stream()
                 .anyMatch(f -> "gmtCreate".equals(f.getName()));
         boolean hasGmtModified = classMetadata.getFields().stream()
                 .anyMatch(f -> "gmtModified".equals(f.getName()));
 
         if (hasGmtCreate) {
-            classBuilder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "minGmtCreate", Modifier.PRIVATE)
+            builder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "minGmtCreate", Modifier.PRIVATE)
                     .addJavadoc("最小创建时间\n").build());
-            classBuilder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "maxGmtCreate", Modifier.PRIVATE)
+            builder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "maxGmtCreate", Modifier.PRIVATE)
                     .addJavadoc("最大创建时间\n").build());
         }
         if (hasGmtModified) {
-            classBuilder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "minGmtModified", Modifier.PRIVATE)
+            builder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "minGmtModified", Modifier.PRIVATE)
                     .addJavadoc("最小修改时间\n").build());
-            classBuilder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "maxGmtModified", Modifier.PRIVATE)
+            builder.addField(FieldSpec.builder(LOCAL_DATE_TIME_TYPE, "maxGmtModified", Modifier.PRIVATE)
                     .addJavadoc("最大修改时间\n").build());
         }
+    }
+
+    @Override
+    protected void addClassJavadoc(TypeSpec.Builder builder, ClassMetadata classMetadata) {
+        super.addClassJavadoc(builder, classMetadata);
+        addClassJavadocSuffix(builder, classMetadata, "查询参数对象");
     }
 
     @Override
