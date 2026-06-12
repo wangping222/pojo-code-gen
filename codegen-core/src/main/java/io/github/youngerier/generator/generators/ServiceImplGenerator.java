@@ -134,6 +134,17 @@ public class ServiceImplGenerator extends AbstractClassGenerator {
                 .addParameter(long.class, "id").returns(TypeName.BOOLEAN)
                 .addStatement("return $N.removeById(id)", repositoryFieldName)
                 .build());
+
+        // findXxxByIdOrThrow
+        builder.addMethod(MethodSpec.methodBuilder("find" + entityName + "ByIdOrThrow")
+                .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
+                .addParameter(TypeName.LONG, "id").returns(dtoType)
+                .addStatement("$T entity = $N.getById(id)", entityType, repositoryFieldName)
+                .beginControlFlow("if (entity == null)")
+                .addStatement("throw new $T($S + id)", RuntimeException.class, entityName + " not found with id: ")
+                .endControlFlow()
+                .addStatement("return $N.toDto(entity)", convertorFieldName)
+                .build());
     }
 
     @Override

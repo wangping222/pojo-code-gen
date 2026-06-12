@@ -103,6 +103,17 @@ public class ServiceGenerator extends AbstractClassGenerator {
                 .addJavadoc("@param id 主键ID\n")
                 .addJavadoc("@return 是否删除成功\n")
                 .build());
+
+        // findXxxByIdOrThrow
+        builder.addMethod(MethodSpec.methodBuilder("find" + entityName + "ByIdOrThrow")
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(dtoType)
+                .addParameter(TypeName.LONG, "id")
+                .addJavadoc("根据ID查询$L，不存在则抛出异常\n", entityName)
+                .addJavadoc("@param id 主键ID\n")
+                .addJavadoc("@return $L对象\n", entityName)
+                .addJavadoc("@throws RuntimeException 当$L不存在时\n", entityName)
+                .build());
     }
 
     @Override
