@@ -21,7 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
+import java.util.stream.Stream;
 
 import static io.github.youngerier.generator.GeneratorConstants.SRC_MAIN_JAVA;
 import static io.github.youngerier.generator.GeneratorConstants.SRC_TEST_JAVA;
@@ -32,13 +32,15 @@ import static io.github.youngerier.generator.GeneratorConstants.SRC_TEST_JAVA;
 @Slf4j
 public class SourceCodeAnalyzer {
 
+    private static final String[] SRC_DIRS = {SRC_MAIN_JAVA, SRC_TEST_JAVA};
+
     public ClassMetadata parse(Class<?> clazz, String moduleName) throws IOException {
         File sourceFile = findSourceFile(moduleName, clazz);
         JavaParser javaParser = createParser(sourceFile);
 
         ParseResult<CompilationUnit> parseResult = javaParser.parse(sourceFile);
         CompilationUnit cu = parseResult.getResult().orElseThrow(() ->
-                new IOException("Failed to parse source file: " + sourceFile.getAbsolutePath() + ", problems: " + parseResult.getProblems()));
+                new IOException("Failed to parse: " + sourceFile.getAbsolutePath() + ", problems: " + parseResult.getProblems()));
 
         ClassMetadata classMetadata = new ClassMetadata();
         classMetadata.setPackageName(clazz.getPackage().getName());
@@ -53,19 +55,10 @@ public class SourceCodeAnalyzer {
     }
 
     private File findSourceFile(String moduleName, Class<?> clazz) throws IOException {
-        // 1. 尝试从 classpath 转换路径
         File sourceFile = getSourceFileFromClasspath(clazz);
         if (sourceFile != null && sourceFile.exists()) {
             return sourceFile;
         }
-
-        // 2. 尝试通过 ProtectionDomain 获取
-        sourceFile = getSourceFileFromProtectionDomain(clazz);
-        if (sourceFile != null && sourceFile.exists()) {
-            return sourceFile;
-        }
-
-        // 3. 在项目目录中查找
         return findSourceInProject(moduleName, clazz);
     }
 
@@ -75,35 +68,12 @@ public class SourceCodeAnalyzer {
             if (resource == null) {
                 return null;
             }
-            String classPath = Paths.get(resource.toURI()).toString();
-            String sourcePath = classPath
-                    .replaceAll("[/\\\\]target[/\\\\]classes", File.separator + SRC_MAIN_JAVA)
-                    .replaceAll("[/\\\\]build[/\\\\]classes[/\\\\]java[/\\\\]main", File.separator + SRC_MAIN_JAVA)
-                    .replaceAll(clazz.getSimpleName() + "\\.class$", clazz.getSimpleName() + ".java");
-            return new File(sourcePath);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private File getSourceFileFromProtectionDomain(Class<?> clazz) {
-        try {
-            var protectionDomain = clazz.getProtectionDomain();
-            if (protectionDomain == null || protectionDomain.getCodeSource() == null) {
-                return null;
-            }
-            var codeSource = protectionDomain.getCodeSource();
-            if (codeSource.getLocation() == null) {
-                return null;
-            }
-            String classLocation = codeSource.getLocation().getPath();
-            if (classLocation.endsWith(".jar")) {
-                return null;
-            }
-            String packagePath = clazz.getPackage().getName().replace('.', File.separatorChar);
-            String sourceFilePath = classLocation.replace("target/classes", "src/main/java")
-                    + packagePath + File.separator + clazz.getSimpleName() + ".java";
-            return new File(sourceFilePath);
+            String path = Paths.get(resource.toURI()).toString();
+            // 转换 class 输出目录为源码目录
+            path = path.replaceAll("[/\\\\](target/classes|build/classes/java/main)", "$1/../" + SRC_MAIN_JAVA);
+            path = path.replaceFirst("[/\\\\]" + SRC_MAIN_JAVA + "[/\\\\]" + SRC_MAIN_JAVA, "/" + SRC_MAIN_JAVA);
+            path = path.replace(clazz.getSimpleName() + ".class", clazz.getSimpleName() + ".java");
+            return new File(path);
         } catch (Exception e) {
             return null;
         }
@@ -122,13 +92,10 @@ public class SourceCodeAnalyzer {
             }
         }
 
-        // 在所有模块中查找
-        File[] modules = projectRoot.listFiles(File::isDirectory);
+        // 在所有 Maven 模块中查找
+        File[] modules = projectRoot.listFiles(f -> f.isDirectory() && new File(f, "pom.xml").exists());
         if (modules != null) {
             for (File module : modules) {
-                if (!new File(module, "pom.xml").exists()) {
-                    continue;
-                }
                 File found = searchInModule(module, packagePath, fileName);
                 if (found != null) {
                     return found;
@@ -140,66 +107,66 @@ public class SourceCodeAnalyzer {
     }
 
     private File searchInModule(File moduleDir, String packagePath, String fileName) {
-        for (String srcDir : new String[]{SRC_MAIN_JAVA, SRC_TEST_JAVA}) {
-            File sourceFile = new File(moduleDir, srcDir + File.separator + packagePath + File.separator + fileName);
-            if (sourceFile.exists()) {
-                return sourceFile;
-            }
-        }
-        return null;
+        return Stream.of(SRC_DIRS)
+                .map(srcDir -> new File(moduleDir, srcDir + File.separator + packagePath + File.separator + fileName))
+                .filter(File::exists)
+                .findFirst()
+                .orElse(null);
     }
 
     private JavaParser createParser(File sourceFile) {
         File srcMainJavaDir = findSrcMainJavaDir(sourceFile);
+
         CombinedTypeSolver typeSolver = new CombinedTypeSolver();
         typeSolver.add(new ReflectionTypeSolver());
         typeSolver.add(new JavaParserTypeSolver(srcMainJavaDir));
 
-        JavaSymbolSolver symbolSolver = new JavaSymbolSolver(typeSolver);
-        ParserConfiguration config = new ParserConfiguration().setSymbolResolver(symbolSolver);
+        ParserConfiguration config = new ParserConfiguration()
+                .setSymbolResolver(new JavaSymbolSolver(typeSolver));
         return new JavaParser(config);
     }
 
     private File findSrcMainJavaDir(File sourceFile) {
-        Path current = sourceFile.toPath().toAbsolutePath().normalize().getParent();
-        while (current != null) {
-            Path srcMainJava = current.resolve(SRC_MAIN_JAVA);
-            if (srcMainJava.toFile().exists()) {
-                return srcMainJava.toFile();
-            }
-            current = current.getParent();
-        }
-        throw new IllegalStateException("Cannot find src/main/java directory for source file: " + sourceFile.getAbsolutePath());
+        return Stream.iterate(sourceFile.toPath().toAbsolutePath().normalize().getParent(), Path::getParent)
+                .filter(p -> p.resolve(SRC_MAIN_JAVA).toFile().exists())
+                .map(p -> p.resolve(SRC_MAIN_JAVA).toFile())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Cannot find src/main/java for: " + sourceFile));
     }
 
     private void extractFields(ClassOrInterfaceDeclaration cls, ClassMetadata classMetadata) {
-        for (FieldDeclaration fieldDecl : cls.getFields()) {
-            if (fieldDecl.isStatic()) {
-                continue;
-            }
-            for (VariableDeclarator var : fieldDecl.getVariables()) {
-                ClassMetadata.FieldInfo fieldInfo = new ClassMetadata.FieldInfo();
-                fieldInfo.setName(var.getNameAsString());
+        cls.getFields().stream()
+                .filter(f -> !f.isStatic())
+                .flatMap(f -> f.getVariables().stream())
+                .forEach(var -> classMetadata.getFields().add(buildFieldInfo(var)));
+    }
 
-                try {
-                    ResolvedType resolvedType = var.getType().resolve();
-                    fieldInfo.setFullType(resolvedType.describe());
-                    fieldInfo.setType(ClassName.bestGuess(resolvedType.describe()));
-                } catch (Exception e) {
-                    fieldInfo.setType(ClassName.bestGuess(var.getTypeAsString()));
-                    fieldInfo.setFullType(var.getTypeAsString());
-                }
+    private ClassMetadata.FieldInfo buildFieldInfo(VariableDeclarator var) {
+        ClassMetadata.FieldInfo fieldInfo = new ClassMetadata.FieldInfo();
+        fieldInfo.setName(var.getNameAsString());
 
-                fieldInfo.setComment(extractComment(fieldDecl));
-                fieldInfo.setPrimaryKey(isPrimaryKey(fieldInfo.getName()));
-                classMetadata.getFields().add(fieldInfo);
-            }
+        String typeStr;
+        try {
+            ResolvedType resolved = var.getType().resolve();
+            typeStr = resolved.describe();
+        } catch (Exception e) {
+            typeStr = var.getTypeAsString();
         }
+        fieldInfo.setType(ClassName.bestGuess(typeStr));
+        fieldInfo.setFullType(typeStr);
+
+        fieldInfo.setComment(extractComment(var));
+        fieldInfo.setPrimaryKey(isPrimaryKey(fieldInfo.getName()));
+        return fieldInfo;
     }
 
     private String extractComment(Node node) {
         return node.getComment()
-                .map(comment -> comment.getContent().trim().replaceAll("\\*", "").trim())
+                .map(c -> c.getContent().lines()
+                        .map(l -> l.replaceFirst("^\\s*\\*\\s?", "").trim())
+                        .filter(l -> !l.isEmpty())
+                        .reduce((a, b) -> a + "\n" + b)
+                        .orElse(""))
                 .orElse("");
     }
 
