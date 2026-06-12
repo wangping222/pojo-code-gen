@@ -1,8 +1,8 @@
 package io.github.youngerier.generator.generators;
 
-import io.github.youngerier.generator.CodeGenerator;
 import io.github.youngerier.generator.model.PackageStructure;
 import io.github.youngerier.generator.model.ClassMetadata;
+import io.github.youngerier.generator.util.StringCaseUtils;
 import io.github.youngerier.support.Response;
 import io.github.youngerier.support.Pagination;
 import com.squareup.javapoet.AnnotationSpec;
@@ -13,7 +13,6 @@ import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
-import lombok.extern.slf4j.Slf4j;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -21,190 +20,158 @@ import java.util.List;
 /**
  * Controller控制器生成器
  */
-@Slf4j
-public class ControllerGenerator implements CodeGenerator {
-
-    private final PackageStructure packageStructure;
+public class ControllerGenerator extends AbstractClassGenerator {
 
     public ControllerGenerator(PackageStructure packageStructure) {
-        this.packageStructure = packageStructure;
+        super(packageStructure);
     }
 
     @Override
     public TypeSpec generate(ClassMetadata classMetadata) {
-        String dtoClassName = packageStructure.getDtoClassName();
-        String serviceClassName = packageStructure.getServiceClassName();
-        String queryClassName = packageStructure.getQueryClassName();
-        
-        ClassName dtoType = ClassName.get(packageStructure.getDtoPackage(), dtoClassName);
-        ClassName serviceType = ClassName.get(packageStructure.getServicePackage(), serviceClassName);
-        ClassName queryType = ClassName.get(packageStructure.getRequestPackage(), queryClassName);
+        String entityName = classMetadata.getClassName();
+        String camelEntityName = classMetadata.getCamelClassName();
+
+        ClassName dtoType = ClassName.get(packageStructure.getDtoPackage(), packageStructure.getDtoClassName());
+        ClassName serviceType = ClassName.get(packageStructure.getServicePackage(), packageStructure.getServiceClassName());
+        ClassName queryType = ClassName.get(packageStructure.getRequestPackage(), packageStructure.getQueryClassName());
         ClassName responseType = ClassName.get(Response.class);
-        ClassName listType = ClassName.get(List.class);
-        ClassName paginationType = ClassName.get(Pagination.class);
-        
-        // 创建类构建器
+
         TypeSpec.Builder classBuilder = TypeSpec.classBuilder(getClassName(classMetadata))
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RestController")).build())
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestMapping"))
-                        .addMember("value", "$S", "/" + classMetadata.getCamelClassName() + "s")
+                        .addMember("value", "$S", "/" + camelEntityName + "s")
                         .build())
                 .addAnnotation(ClassName.get("lombok", "RequiredArgsConstructor"))
                 .addAnnotation(ClassName.get("lombok.extern.slf4j", "Slf4j"));
 
-        // 添加类注释
-        if (classMetadata.getClassComment() != null && !classMetadata.getClassComment().isEmpty()) {
-            classBuilder.addJavadoc(classMetadata.getClassComment() + "\n");
-            classBuilder.addJavadoc("控制器\n");
-        }
+        addClassJavadoc(classBuilder, classMetadata, "控制器");
+        addServiceField(classBuilder, camelEntityName, serviceType);
+        addControllerMethods(classBuilder, entityName, camelEntityName, dtoType, serviceType, queryType, responseType);
 
-        // 添加服务字段
-        FieldSpec serviceField = FieldSpec.builder(serviceType, classMetadata.getCamelClassName() + "Service")
+        return classBuilder.build();
+    }
+
+    private void addServiceField(TypeSpec.Builder classBuilder, String camelEntityName, ClassName serviceType) {
+        classBuilder.addField(FieldSpec.builder(serviceType, camelEntityName + "Service")
                 .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                .build();
-        classBuilder.addField(serviceField);
+                .build());
+    }
 
-        // 添加创建方法
-        MethodSpec createMethod = MethodSpec.methodBuilder("create" + classMetadata.getClassName())
+    private void addControllerMethods(TypeSpec.Builder classBuilder, String entityName, String camelEntityName,
+                                       ClassName dtoType, ClassName serviceType, ClassName queryType, ClassName responseType) {
+        String serviceName = camelEntityName + "Service";
+        String dtoParamName = camelEntityName + "DTO";
+
+        // createXxx
+        classBuilder.addMethod(MethodSpec.methodBuilder("create" + entityName)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(responseType, dtoType))
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PostMapping")).build())
-                .addParameter(ParameterSpec.builder(dtoType, classMetadata.getCamelClassName() + "DTO")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestBody")).build())
-                        .build())
-                .addJavadoc("创建$L\n", classMetadata.getClassName())
-                .addJavadoc("@param $L $L数据传输对象\n",
-                        classMetadata.getCamelClassName() + "DTO",
-                        classMetadata.getClassName())
-                .addJavadoc("@return 创建的$L对象\n", classMetadata.getClassName())
-                .addStatement("log.info(\"创建$L: {}\", $L)", classMetadata.getClassName(), classMetadata.getCamelClassName() + "DTO")
-                .addStatement("$T result = $L.create$L($L)", 
-                        dtoType,
-                        classMetadata.getCamelClassName() + "Service",
-                        classMetadata.getClassName(),
-                        classMetadata.getCamelClassName() + "DTO")
+                .addParameter(createRequestBodyParam(dtoType, dtoParamName))
+                .addJavadoc("创建$L\n", entityName)
+                .addJavadoc("@param $L $L数据传输对象\n", dtoParamName, entityName)
+                .addJavadoc("@return 创建的$L对象\n", entityName)
+                .addStatement("log.info(\"创建$L: {}\", $L)", entityName, dtoParamName)
+                .addStatement("$T result = $L.create$L($L)", dtoType, serviceName, entityName, dtoParamName)
                 .addStatement("return $T.ok(result)", responseType)
-                .build();
-        classBuilder.addMethod(createMethod);
+                .build());
 
-        // 添加根据ID查询方法
-        MethodSpec getByIdMethod = MethodSpec.methodBuilder("get" + classMetadata.getClassName() + "ById")
+        // getXxxById
+        classBuilder.addMethod(MethodSpec.methodBuilder("get" + entityName + "ById")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(responseType, dtoType))
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "GetMapping"))
                         .addMember("value", "$S", "/{id}")
                         .build())
-                .addParameter(ParameterSpec.builder(TypeName.LONG, "id")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PathVariable")).build())
-                        .build())
-                .addJavadoc("根据ID查询$L\n", classMetadata.getClassName())
+                .addParameter(createPathVariableParam(TypeName.LONG, "id"))
+                .addJavadoc("根据ID查询$L\n", entityName)
                 .addJavadoc("@param id 主键ID\n")
-                .addJavadoc("@return 对应的$L对象\n", classMetadata.getClassName())
-                .addStatement("log.info(\"根据ID查询$L: {}\", id)", classMetadata.getClassName())
-                .addStatement("$T result = $L.get$LById(id)", 
-                        dtoType,
-                        classMetadata.getCamelClassName() + "Service",
-                        classMetadata.getClassName())
+                .addJavadoc("@return 对应的$L对象\n", entityName)
+                .addStatement("log.info(\"根据ID查询$L: {}\", id)", entityName)
+                .addStatement("$T result = $L.get$LById(id)", dtoType, serviceName, entityName)
                 .addStatement("return $T.ok(result)", responseType)
-                .build();
-        classBuilder.addMethod(getByIdMethod);
+                .build());
 
-        // 添加查询列表方法
-        MethodSpec queryListMethod = MethodSpec.methodBuilder("query" + classMetadata.getClassName() + "List")
+        // queryXxxList
+        classBuilder.addMethod(MethodSpec.methodBuilder("query" + entityName + "List")
                 .addModifiers(Modifier.PUBLIC)
-                .returns(ParameterizedTypeName.get(responseType, ParameterizedTypeName.get(listType, dtoType)))
+                .returns(ParameterizedTypeName.get(responseType, ParameterizedTypeName.get(ClassName.get(List.class), dtoType)))
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PostMapping"))
                         .addMember("value", "$S", "/query")
                         .build())
-                .addParameter(ParameterSpec.builder(queryType, "query")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestBody")).build())
-                        .build())
-                .addJavadoc("查询$L列表\n", classMetadata.getClassName())
+                .addParameter(createRequestBodyParam(queryType, "query"))
+                .addJavadoc("查询$L列表\n", entityName)
                 .addJavadoc("@param query 查询条件\n")
-                .addJavadoc("@return $L对象列表\n", classMetadata.getClassName())
-                .addStatement("log.info(\"查询$L列表: {}\", query)", classMetadata.getClassName())
-                .addStatement("$T<$T> result = $L.query$Ls(query)", 
-                        listType, dtoType,
-                        classMetadata.getCamelClassName() + "Service",
-                        classMetadata.getClassName())
+                .addJavadoc("@return $L对象列表\n", entityName)
+                .addStatement("log.info(\"查询$L列表: {}\", query)", entityName)
+                .addStatement("$T<$T> result = $L.query$Ls(query)",
+                        ClassName.get(List.class), dtoType, serviceName, entityName)
                 .addStatement("return $T.ok(result)", responseType)
-                .build();
-        classBuilder.addMethod(queryListMethod);
+                .build());
 
-        // 添加分页查询方法
-        MethodSpec pageQueryMethod = MethodSpec.methodBuilder("pageQuery" + classMetadata.getClassName() + "s")
+        // pageQueryXxxs
+        classBuilder.addMethod(MethodSpec.methodBuilder("pageQuery" + entityName + "s")
                 .addModifiers(Modifier.PUBLIC)
-                .returns(ParameterizedTypeName.get(responseType, ParameterizedTypeName.get(paginationType, dtoType)))
+                .returns(ParameterizedTypeName.get(responseType, ParameterizedTypeName.get(ClassName.get(Pagination.class), dtoType)))
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PostMapping"))
                         .addMember("value", "$S", "/page")
                         .build())
-                .addParameter(ParameterSpec.builder(queryType, "query")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestBody")).build())
-                        .build())
-                .addJavadoc("分页查询$L\n", classMetadata.getClassName())
+                .addParameter(createRequestBodyParam(queryType, "query"))
+                .addJavadoc("分页查询$L\n", entityName)
                 .addJavadoc("@param query 查询条件\n")
-                .addJavadoc("@return $L分页对象\n", classMetadata.getClassName())
-                .addStatement("log.info(\"分页查询$L: {}\", query)", classMetadata.getClassName())
-                .addStatement("$T<$T> result = $L.pageQuery$Ls(query)", 
-                        paginationType, dtoType,
-                        classMetadata.getCamelClassName() + "Service",
-                        classMetadata.getClassName())
+                .addJavadoc("@return $L分页对象\n", entityName)
+                .addStatement("log.info(\"分页查询$L: {}\", query)", entityName)
+                .addStatement("$T<$T> result = $L.pageQuery$Ls(query)",
+                        ClassName.get(Pagination.class), dtoType, serviceName, entityName)
                 .addStatement("return $T.ok(result)", responseType)
-                .build();
-        classBuilder.addMethod(pageQueryMethod);
+                .build());
 
-        // 添加更新方法
-        MethodSpec updateMethod = MethodSpec.methodBuilder("update" + classMetadata.getClassName())
+        // updateXxx
+        classBuilder.addMethod(MethodSpec.methodBuilder("update" + entityName)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(responseType, dtoType))
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PutMapping"))
                         .addMember("value", "$S", "/{id}")
                         .build())
-                .addParameter(ParameterSpec.builder(TypeName.LONG, "id")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PathVariable")).build())
-                        .build())
-                .addParameter(ParameterSpec.builder(dtoType, classMetadata.getCamelClassName() + "DTO")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestBody")).build())
-                        .build())
-                .addJavadoc("更新$L\n", classMetadata.getClassName())
+                .addParameter(createPathVariableParam(TypeName.LONG, "id"))
+                .addParameter(createRequestBodyParam(dtoType, dtoParamName))
+                .addJavadoc("更新$L\n", entityName)
                 .addJavadoc("@param id 主键ID\n")
-                .addJavadoc("@param $L $L数据传输对象\n",
-                        classMetadata.getCamelClassName() + "DTO",
-                        classMetadata.getClassName())
-                .addJavadoc("@return 更新后的$L对象\n", classMetadata.getClassName())
-                .addStatement("log.info(\"更新$L: id={}, data={}\", id, $L)", classMetadata.getClassName(), classMetadata.getCamelClassName() + "DTO")
-                .addStatement("$T result = $L.update$L(id, $L)", 
-                        dtoType,
-                        classMetadata.getCamelClassName() + "Service",
-                        classMetadata.getClassName(),
-                        classMetadata.getCamelClassName() + "DTO")
+                .addJavadoc("@param $L $L数据传输对象\n", dtoParamName, entityName)
+                .addJavadoc("@return 更新后的$L对象\n", entityName)
+                .addStatement("log.info(\"更新$L: id={}, data={}\", id, $L)", entityName, dtoParamName)
+                .addStatement("$T result = $L.update$L(id, $L)", dtoType, serviceName, entityName, dtoParamName)
                 .addStatement("return $T.ok(result)", responseType)
-                .build();
-        classBuilder.addMethod(updateMethod);
+                .build());
 
-        // 添加删除方法
-        MethodSpec deleteMethod = MethodSpec.methodBuilder("delete" + classMetadata.getClassName())
+        // deleteXxx
+        classBuilder.addMethod(MethodSpec.methodBuilder("delete" + entityName)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(responseType, ClassName.get(Boolean.class)))
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "DeleteMapping"))
                         .addMember("value", "$S", "/{id}")
                         .build())
-                .addParameter(ParameterSpec.builder(TypeName.LONG, "id")
-                        .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PathVariable")).build())
-                        .build())
-                .addJavadoc("删除$L\n", classMetadata.getClassName())
+                .addParameter(createPathVariableParam(TypeName.LONG, "id"))
+                .addJavadoc("删除$L\n", entityName)
                 .addJavadoc("@param id 主键ID\n")
                 .addJavadoc("@return 是否删除成功\n")
-                .addStatement("log.info(\"删除$L: id={}\", id)", classMetadata.getClassName())
-                .addStatement("boolean result = $L.delete$L(id)", 
-                        classMetadata.getCamelClassName() + "Service",
-                        classMetadata.getClassName())
+                .addStatement("log.info(\"删除$L: id={}\", id)", entityName)
+                .addStatement("boolean result = $L.delete$L(id)", serviceName, entityName)
                 .addStatement("return $T.ok(result)", responseType)
-                .build();
-        classBuilder.addMethod(deleteMethod);
+                .build());
+    }
 
-        return classBuilder.build();
+    private ParameterSpec createRequestBodyParam(ClassName type, String name) {
+        return ParameterSpec.builder(type, name)
+                .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestBody")).build())
+                .build();
+    }
+
+    private ParameterSpec createPathVariableParam(TypeName type, String name) {
+        return ParameterSpec.builder(type, name)
+                .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PathVariable")).build())
+                .build();
     }
 
     @Override

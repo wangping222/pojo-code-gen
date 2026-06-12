@@ -1,9 +1,9 @@
 package io.github.youngerier.generator.generators;
 
 import io.github.youngerier.support.Pagination;
-import io.github.youngerier.generator.CodeGenerator;
 import io.github.youngerier.generator.model.PackageStructure;
 import io.github.youngerier.generator.model.ClassMetadata;
+import io.github.youngerier.generator.util.StringCaseUtils;
 import com.squareup.javapoet.*;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,158 +15,141 @@ import java.util.stream.Collectors;
  * Service实现类生成器
  */
 @Slf4j
-public class ServiceImplGenerator implements CodeGenerator {
+public class ServiceImplGenerator extends AbstractClassGenerator {
 
-
-    private final PackageStructure packageLayout;
-
-    public ServiceImplGenerator(PackageStructure packageLayout) {
-        this.packageLayout = packageLayout;
+    public ServiceImplGenerator(PackageStructure packageStructure) {
+        super(packageStructure);
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata pojoInfo) {
-        // 获取实体类名
-        String entityName = pojoInfo.getClassName();
-        // 创建实体类类型
-        ClassName entityType = ClassName.get(pojoInfo.getPackageName(), entityName);
-        // 创建DTO类型
-        ClassName dtoType = ClassName.get(packageLayout.getDtoPackage(), packageLayout.getDtoClassName());
-        // 创建Service接口类型
-        ClassName serviceType = ClassName.get(
-                packageLayout.getServicePackage(),
-                packageLayout.getServiceClassName());
-        // 创建Repository接口类型
-        ClassName repositoryType = ClassName.get(
-                packageLayout.getRepositoryPackage(),
-                packageLayout.getRepositoryClassName());
-        // 创建Mapstruct Mapper类型
-        ClassName mapperType = ClassName.get(
-                packageLayout.getConvertorPackage(),
-                packageLayout.getConvertorClassName());
+    public TypeSpec generate(ClassMetadata classMetadata) {
+        String entityName = classMetadata.getClassName();
+        String camelEntityName = classMetadata.getCamelClassName();
 
-        // 创建类构建器
-        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(getClassName(pojoInfo))
+        ClassName entityType = getEntityType(classMetadata);
+        ClassName dtoType = ClassName.get(packageStructure.getDtoPackage(), packageStructure.getDtoClassName());
+        ClassName serviceType = ClassName.get(packageStructure.getServicePackage(), packageStructure.getServiceClassName());
+        ClassName repositoryType = ClassName.get(packageStructure.getRepositoryPackage(), packageStructure.getRepositoryClassName());
+        ClassName mapperType = ClassName.get(packageStructure.getConvertorPackage(), packageStructure.getConvertorClassName());
+
+        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(getClassName(classMetadata))
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(ClassName.get("org.springframework.stereotype", "Service"))
                 .addSuperinterface(serviceType);
 
-        // 添加Repository字段
-        String repositoryFieldName = pojoInfo.getCamelClassName() + "Repository";
-        FieldSpec repositoryField = FieldSpec.builder(repositoryType, repositoryFieldName)
-                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                .build();
-        classBuilder.addField(repositoryField);
+        addClassJavadoc(classBuilder, classMetadata, "服务实现类");
+        addRepositoryAndMapperFields(classBuilder, camelEntityName, repositoryType, mapperType);
+        addConstructor(classBuilder, camelEntityName, repositoryType);
+        addServiceMethods(classBuilder, entityName, camelEntityName, entityType, dtoType, repositoryType, mapperType);
 
-        // 添加Mapper字段（使用INSTANCE常量）
-        String mapperFieldName = pojoInfo.getCamelClassName() + "Convertor";
-        FieldSpec mapperField = FieldSpec.builder(mapperType, mapperFieldName)
+        return classBuilder.build();
+    }
+
+    private void addRepositoryAndMapperFields(TypeSpec.Builder classBuilder, String camelEntityName,
+                                               ClassName repositoryType, ClassName mapperType) {
+        classBuilder.addField(FieldSpec.builder(repositoryType, camelEntityName + "Repository")
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                .build());
+
+        classBuilder.addField(FieldSpec.builder(mapperType, camelEntityName + "Convertor")
                 .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("$T.INSTANCE", mapperType)
-                .build();
-        classBuilder.addField(mapperField);
+                .build());
+    }
 
-        // 添加构造函数（只注入Repository）
-        MethodSpec constructor = MethodSpec.constructorBuilder()
+    private void addConstructor(TypeSpec.Builder classBuilder, String camelEntityName, ClassName repositoryType) {
+        String repositoryFieldName = camelEntityName + "Repository";
+        classBuilder.addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(repositoryType, repositoryFieldName)
                 .addStatement("this.$N = $N", repositoryFieldName, repositoryFieldName)
-                .build();
-        classBuilder.addMethod(constructor);
+                .build());
+    }
 
-        // 添加createXxx方法
-        MethodSpec createMethod = MethodSpec.methodBuilder("create" + entityName)
+    private void addServiceMethods(TypeSpec.Builder classBuilder, String entityName, String camelEntityName,
+                                    ClassName entityType, ClassName dtoType,
+                                    ClassName repositoryType, ClassName mapperType) {
+        String repositoryFieldName = camelEntityName + "Repository";
+        String mapperFieldName = camelEntityName + "Convertor";
+
+        // createXxx
+        classBuilder.addMethod(MethodSpec.methodBuilder("create" + entityName)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(Override.class)
-                .addParameter(dtoType, pojoInfo.getCamelClassName() + "DTO")
+                .addParameter(dtoType, camelEntityName + "DTO")
                 .returns(dtoType)
-                .addStatement("$T entity = $N.toEntity($N)", entityType, mapperFieldName, pojoInfo.getCamelClassName() + "DTO")
+                .addStatement("$T entity = $N.toEntity($N)", entityType, mapperFieldName, camelEntityName + "DTO")
                 .addStatement("$N.save(entity)", repositoryFieldName)
                 .addStatement("return $N.toDto(entity)", mapperFieldName)
-                .build();
-        classBuilder.addMethod(createMethod);
+                .build());
 
-        // 添加getXxxById方法
-        MethodSpec getByIdMethod = MethodSpec.methodBuilder("get" + entityName + "ById")
+        // getXxxById
+        classBuilder.addMethod(MethodSpec.methodBuilder("get" + entityName + "ById")
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(Override.class)
                 .addParameter(TypeName.LONG, "id")
                 .returns(dtoType)
                 .addStatement("$T entity = $N.getById(id)", entityType, repositoryFieldName)
                 .addStatement("return $N.toDto(entity)", mapperFieldName)
-                .build();
-        classBuilder.addMethod(getByIdMethod);
+                .build());
 
-
-        // 添加queryXxxs方法
-        ParameterizedTypeName listOfDto = ParameterizedTypeName.get(
-                ClassName.get(List.class), dtoType);
-        MethodSpec queryMethod = MethodSpec.methodBuilder("query" + entityName + "s")
+        // queryXxxs
+        ParameterizedTypeName listOfDto = ParameterizedTypeName.get(ClassName.get(List.class), dtoType);
+        ClassName queryType = ClassName.get(packageStructure.getRequestPackage(), entityName + "Query");
+        classBuilder.addMethod(MethodSpec.methodBuilder("query" + entityName + "s")
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(Override.class)
-                .addParameter(ClassName.get(packageLayout.getRequestPackage(), pojoInfo.getClassName() + "Query"), "query")
+                .addParameter(queryType, "query")
                 .returns(listOfDto)
-                .addStatement("return $N.selectListByQuery(query).stream().map($N::toDto).collect($T.toList())", repositoryFieldName, mapperFieldName, Collectors.class)
-                .build();
-        classBuilder.addMethod(queryMethod);
+                .addStatement("return $N.selectListByQuery(query).stream().map($N::toDto).collect($T.toList())",
+                        repositoryFieldName, mapperFieldName, Collectors.class)
+                .build());
 
-        // 添加pageQueryXxxs方法
+        // pageQueryXxxs
         ClassName pageType = ClassName.get("com.mybatisflex.core.paginate", "Page");
-        MethodSpec pageQueryMethod = MethodSpec.methodBuilder("pageQuery" + entityName + "s")
+        classBuilder.addMethod(MethodSpec.methodBuilder("pageQuery" + entityName + "s")
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(Override.class)
-                .addParameter(ClassName.get(packageLayout.getRequestPackage(), pojoInfo.getClassName() + "Query"), "query")
+                .addParameter(queryType, "query")
                 .returns(ParameterizedTypeName.get(ClassName.get(Pagination.class), dtoType))
                 .addStatement("$T<$T> page = $N.page(query).map($N::toDto)", pageType, dtoType, repositoryFieldName, mapperFieldName)
                 .addStatement("return $T.of(page.getRecords(), query, page.getTotalRow())", Pagination.class)
-                .build();
-        classBuilder.addMethod(pageQueryMethod);
+                .build());
 
-        // 添加updateXxx方法
-        MethodSpec updateMethod = MethodSpec.methodBuilder("update" + entityName)
+        // updateXxx
+        classBuilder.addMethod(MethodSpec.methodBuilder("update" + entityName)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(Override.class)
                 .addParameter(TypeName.LONG, "id")
-                .addParameter(dtoType, pojoInfo.getCamelClassName() + "DTO")
+                .addParameter(dtoType, camelEntityName + "DTO")
                 .returns(dtoType)
                 .addStatement("$T existingEntity = $N.getById(id)", entityType, repositoryFieldName)
                 .beginControlFlow("if (existingEntity == null)")
                 .addStatement("return null")
                 .endControlFlow()
-                .addStatement("$T updatedEntity = $N.toEntity($N)", entityType, mapperFieldName, pojoInfo.getCamelClassName() + "DTO")
-                .addStatement("updatedEntity.setId(id)") // Ensure ID is set for update
+                .addStatement("$T updatedEntity = $N.toEntity($N)", entityType, mapperFieldName, camelEntityName + "DTO")
+                .addStatement("updatedEntity.setId(id)")
                 .addStatement("$N.updateById(updatedEntity)", repositoryFieldName)
                 .addStatement("return $N.toDto(updatedEntity)", mapperFieldName)
-                .build();
-        classBuilder.addMethod(updateMethod);
+                .build());
 
-        // 添加deleteXxx方法
-        MethodSpec deleteMethod = MethodSpec.methodBuilder("delete" + entityName)
+        // deleteXxx
+        classBuilder.addMethod(MethodSpec.methodBuilder("delete" + entityName)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(Override.class)
                 .addParameter(long.class, "id")
                 .returns(TypeName.BOOLEAN)
                 .addStatement("return $N.removeById(id)", repositoryFieldName)
-                .build();
-        classBuilder.addMethod(deleteMethod);
-
-        // 添加类注释
-        if (pojoInfo.getClassComment() != null && !pojoInfo.getClassComment().isEmpty()) {
-            classBuilder.addJavadoc(pojoInfo.getClassComment() + "\n");
-            classBuilder.addJavadoc("服务实现类\n");
-        }
-
-        return classBuilder.build();
+                .build());
     }
 
     @Override
     public String getPackageName() {
-        return packageLayout.getServiceImplPackage();
+        return packageStructure.getServiceImplPackage();
     }
 
     @Override
-    public String getClassName(ClassMetadata pojoInfo) {
-        return packageLayout.getServiceImplClassName();
+    public String getClassName(ClassMetadata classMetadata) {
+        return packageStructure.getServiceImplClassName();
     }
-
 }

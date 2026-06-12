@@ -1,6 +1,5 @@
 package io.github.youngerier.generator.generators;
 
-import io.github.youngerier.generator.CodeGenerator;
 import io.github.youngerier.generator.model.PackageStructure;
 import io.github.youngerier.generator.model.ClassMetadata;
 import com.squareup.javapoet.ClassName;
@@ -14,41 +13,36 @@ import javax.lang.model.element.Modifier;
 /**
  * Mapper接口生成器 - 基于MyBatis Flex
  */
-public class MapperGenerator implements CodeGenerator {
-    private final PackageStructure packageLayout;
+public class MapperGenerator extends AbstractClassGenerator {
 
-    public MapperGenerator(PackageStructure packageLayout) {
-        this.packageLayout = packageLayout;
+    public MapperGenerator(PackageStructure packageStructure) {
+        super(packageStructure);
     }
 
     @Override
-    public TypeSpec generate(ClassMetadata pojoInfo) {
-        TypeSpec.Builder interfaceBuilder = TypeSpec.interfaceBuilder(getClassName(pojoInfo))
-                .addModifiers(Modifier.PUBLIC)
+    public TypeSpec generate(ClassMetadata classMetadata) {
+        TypeSpec.Builder interfaceBuilder = createInterfaceBuilder(getClassName(classMetadata))
                 .addAnnotation(Mapper.class)
-                .addSuperinterface(createBaseMapperType(pojoInfo));
+                .addSuperinterface(createBaseMapperType(classMetadata));
 
-        if (pojoInfo.getClassComment() != null && !pojoInfo.getClassComment().isEmpty()) {
-            interfaceBuilder.addJavadoc(pojoInfo.getClassComment() + "\n");
-            interfaceBuilder.addJavadoc("数据访问层Mapper接口\n");
-        }
+        addClassJavadoc(interfaceBuilder, classMetadata, "数据访问层Mapper接口");
 
         return interfaceBuilder.build();
     }
 
-    private ParameterizedTypeName createBaseMapperType(ClassMetadata pojoInfo) {
-        ClassName entityType = ClassName.get(pojoInfo.getPackageName(), pojoInfo.getClassName());
+    private ParameterizedTypeName createBaseMapperType(ClassMetadata classMetadata) {
+        ClassName entityType = getEntityType(classMetadata);
         ClassName baseMapperType = ClassName.get("com.mybatisflex.core", "BaseMapper");
         return ParameterizedTypeName.get(baseMapperType, entityType);
     }
 
     @Override
     public String getPackageName() {
-        return packageLayout.getMapperPackage();
+        return packageStructure.getMapperPackage();
     }
 
     @Override
-    public String getClassName(ClassMetadata pojoInfo) {
-        return packageLayout.getMapperClassName();
+    public String getClassName(ClassMetadata classMetadata) {
+        return packageStructure.getMapperClassName();
     }
 }

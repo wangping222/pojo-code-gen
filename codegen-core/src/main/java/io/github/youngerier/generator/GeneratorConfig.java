@@ -2,8 +2,11 @@ package io.github.youngerier.generator;
 
 import lombok.Builder;
 import lombok.Getter;
+import java.util.Collections;
+import java.util.EnumSet;
 
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @Builder
@@ -23,5 +26,16 @@ public class GeneratorConfig {
      * A list of fully qualified class names of the POJOs for which code needs to be generated.
      */
     private final List<Class<?>> pojoClasses;
+    /**
+     * Enabled generator types. If empty or null, all generator types are enabled.
+     */
+    private final Set<GeneratorType> enabledGenerators;
+
+    public Set<GeneratorType> getEnabledGeneratorsOrDefault() {
+        if (enabledGenerators == null || enabledGenerators.isEmpty()) {
+            return EnumSet.allOf(GeneratorType.class);
+        }
+        return Collections.unmodifiableSet(EnumSet.copyOf(enabledGenerators));
+    }
 
 }

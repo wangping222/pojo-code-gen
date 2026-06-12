@@ -1,6 +1,7 @@
 package io.github.youngerier.generator.model;
 
 import com.squareup.javapoet.TypeName;
+import io.github.youngerier.generator.util.StringCaseUtils;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -17,11 +18,13 @@ public class ClassMetadata {
     private List<FieldInfo> fields = new ArrayList<>(); // 字段信息列表
 
     public String getBasePackageName() {
-        return getPackageName().substring(0, getPackageName().lastIndexOf("."));
+        String pkg = getPackageName();
+        int lastDot = pkg.lastIndexOf(".");
+        return lastDot > 0 ? pkg.substring(0, lastDot) : pkg;
     }
 
     public String getCamelClassName() {
-        return className.substring(0, 1).toLowerCase() + className.substring(1);
+        return StringCaseUtils.lowerFirstChar(className);
     }
 
     /**

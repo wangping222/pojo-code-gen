@@ -15,18 +15,14 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
+import static io.github.youngerier.generator.GeneratorConstants.DEFAULT_INDENT;
+import static io.github.youngerier.generator.GeneratorConstants.SRC_MAIN_JAVA;
+
 /**
  * 代码文件写入器，负责将生成的代码写入文件系统
  */
 @Slf4j
 public class CodeFileWriter {
-
-    /**
-     * Standard Maven source directory path.
-     */
-    private static final String SRC_MAIN_JAVA = "src" + File.separator + "main" + File.separator + "java";
-
-    private static final String DEFAULT_INDENT = "    "; // 默认4个空格缩进
     
     private final String baseOutputDir;
 
@@ -53,7 +49,7 @@ public class CodeFileWriter {
                 .indent(DEFAULT_INDENT)
                 .build();
 
-        // 计算新内容的哈希值
+        // 生成内容并计算哈希值
         byte[] newContentBytes = javaFile.toString().getBytes(StandardCharsets.UTF_8);
         byte[] newHash = calculateHash(newContentBytes);
 
@@ -77,7 +73,7 @@ public class CodeFileWriter {
         }
 
         // 写入文件
-        javaFile.writeTo(outputDirPath.toFile());
+        Files.write(filePath, newContentBytes);
 
         log.info("生成文件: {}.{}", packageName, className);
     }
