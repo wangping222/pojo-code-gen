@@ -96,10 +96,21 @@ public class RepositoryGenerator extends AbstractClassGenerator {
                     tableVarName, fieldName, getterName);
         }
 
-        queryWrapperBuilder.add(".and($L.gmtCreate.ge(query.getMinGmtCreate()))\n", tableVarName);
-        queryWrapperBuilder.add(".and($L.gmtCreate.le(query.getMaxGmtCreate()))\n", tableVarName);
-        queryWrapperBuilder.add(".and($L.gmtModified.ge(query.getMinGmtModified()))\n", tableVarName);
-        queryWrapperBuilder.add(".and($L.gmtModified.le(query.getMaxGmtModified()));\n", tableVarName);
+        // 只有实体包含时间字段时才生成时间范围查询条件
+        boolean hasGmtCreate = classMetadata.getFields().stream()
+                .anyMatch(f -> "gmtCreate".equals(f.getName()));
+        boolean hasGmtModified = classMetadata.getFields().stream()
+                .anyMatch(f -> "gmtModified".equals(f.getName()));
+
+        if (hasGmtCreate) {
+            queryWrapperBuilder.add(".and($L.gmtCreate.ge(query.getMinGmtCreate()))\n", tableVarName);
+            queryWrapperBuilder.add(".and($L.gmtCreate.le(query.getMaxGmtCreate()))\n", tableVarName);
+        }
+        if (hasGmtModified) {
+            queryWrapperBuilder.add(".and($L.gmtModified.ge(query.getMinGmtModified()))\n", tableVarName);
+            queryWrapperBuilder.add(".and($L.gmtModified.le(query.getMaxGmtModified()))\n", tableVarName);
+        }
+
         queryWrapperBuilder.unindent();
 
         methodBuilder.addCode(queryWrapperBuilder.build());
