@@ -126,8 +126,4 @@ public class RepositoryGenerator extends AbstractClassGenerator {
     public String getClassName(ClassMetadata classMetadata) {
         return packageStructure.getRepositoryClassName();
     }
-
-    private ClassName getQueryType(ClassMetadata classMetadata) {
-        return ClassName.get(packageStructure.getRequestPackage(), classMetadata.getClassName() + "Query");
-    }
 }

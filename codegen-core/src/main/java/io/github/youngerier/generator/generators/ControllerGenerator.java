@@ -162,18 +162,6 @@ public class ControllerGenerator extends AbstractClassGenerator {
                 .build());
     }
 
-    private ParameterSpec createRequestBodyParam(ClassName type, String name) {
-        return ParameterSpec.builder(type, name)
-                .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestBody")).build())
-                .build();
-    }
-
-    private ParameterSpec createPathVariableParam(TypeName type, String name) {
-        return ParameterSpec.builder(type, name)
-                .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PathVariable")).build())
-                .build();
-    }
-
     @Override
     public String getPackageName() {
         return packageStructure.getControllerPackage();

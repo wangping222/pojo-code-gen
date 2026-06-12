@@ -4,16 +4,10 @@ import io.github.youngerier.generator.model.PackageStructure;
 import io.github.youngerier.generator.model.ClassMetadata;
 import com.squareup.javapoet.TypeSpec;
 
-import java.util.Set;
-
 /**
  * Request模型类生成器
  */
 public class RequestGenerator extends AbstractClassGenerator {
-
-    private static final Set<String> EXCLUDED_FIELDS = Set.of(
-            "id", "gmtCreate", "gmtModified", "createTime", "updateTime", "createdAt", "updatedAt"
-    );
 
     public RequestGenerator(PackageStructure packageStructure) {
         super(packageStructure);
@@ -23,7 +17,7 @@ public class RequestGenerator extends AbstractClassGenerator {
     public TypeSpec generate(ClassMetadata classMetadata) {
         TypeSpec.Builder classBuilder = createClassBuilder(getClassName(classMetadata));
 
-        addFieldsExcluding(classBuilder, classMetadata.getFields(), EXCLUDED_FIELDS);
+        addFieldsExcludingSystem(classBuilder, classMetadata.getFields());
         addClassJavadoc(classBuilder, classMetadata, "请求参数对象");
 
         return classBuilder.build();
