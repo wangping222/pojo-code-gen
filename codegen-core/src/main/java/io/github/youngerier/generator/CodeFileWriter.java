@@ -73,6 +73,7 @@ public class CodeFileWriter {
         }
 
         // 写入文件
+        Files.createDirectories(filePath.getParent());
         Files.write(filePath, newContentBytes);
 
         log.info("生成文件: {}.{}", packageName, className);

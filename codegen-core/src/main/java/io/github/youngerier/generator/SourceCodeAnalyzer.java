@@ -66,15 +66,23 @@ public class SourceCodeAnalyzer {
         try {
             var resource = clazz.getResource(clazz.getSimpleName() + ".class");
             if (resource == null) {
+                log.debug("No .class resource found for: {}", clazz.getName());
                 return null;
             }
             String path = Paths.get(resource.toURI()).toString();
-            // 转换 class 输出目录为源码目录
-            path = path.replaceAll("[/\\\\](target/classes|build/classes/java/main)", "$1/../" + SRC_MAIN_JAVA);
-            path = path.replaceFirst("[/\\\\]" + SRC_MAIN_JAVA + "[/\\\\]" + SRC_MAIN_JAVA, "/" + SRC_MAIN_JAVA);
-            path = path.replace(clazz.getSimpleName() + ".class", clazz.getSimpleName() + ".java");
-            return new File(path);
+            log.debug("Class file path: {}", path);
+
+            path = path
+                    .replaceAll("[/\\\\]target[/\\\\]classes", File.separator + SRC_MAIN_JAVA)
+                    .replaceAll("[/\\\\]build[/\\\\]classes[/\\\\]java[/\\\\]main", File.separator + SRC_MAIN_JAVA)
+                    .replace(clazz.getSimpleName() + ".class", clazz.getSimpleName() + ".java");
+
+            log.debug("Converted source path: {}", path);
+            File sourceFile = new File(path);
+            log.debug("Source file exists: {}", sourceFile.exists());
+            return sourceFile;
         } catch (Exception e) {
+            log.debug("Error resolving source file for {}: {}", clazz.getName(), e.getMessage());
             return null;
         }
     }
@@ -92,18 +100,39 @@ public class SourceCodeAnalyzer {
             }
         }
 
-        // 在所有 Maven 模块中查找
-        File[] modules = projectRoot.listFiles(f -> f.isDirectory() && new File(f, "pom.xml").exists());
-        if (modules != null) {
-            for (File module : modules) {
-                File found = searchInModule(module, packagePath, fileName);
+        // 递归查找所有 Maven 模块
+        File found = findInSubModules(projectRoot, packagePath, fileName);
+        if (found != null) {
+            return found;
+        }
+
+        throw new IOException("Source file not found for class: " + clazz.getName());
+    }
+
+    private File findInSubModules(File dir, String packagePath, String fileName) {
+        // 检查当前目录是否是 Maven 模块
+        if (new File(dir, "pom.xml").exists()) {
+            File found = searchInModule(dir, packagePath, fileName);
+            if (found != null) {
+                return found;
+            }
+        }
+        // 递归查找子目录
+        File[] subDirs = dir.listFiles(File::isDirectory);
+        if (subDirs != null) {
+            for (File subDir : subDirs) {
+                // 跳过 .git、target、.idea 等目录
+                String name = subDir.getName();
+                if (name.startsWith(".") || name.equals("target")) {
+                    continue;
+                }
+                File found = findInSubModules(subDir, packagePath, fileName);
                 if (found != null) {
                     return found;
                 }
             }
         }
-
-        throw new IOException("Source file not found for class: " + clazz.getName());
+        return null;
     }
 
     private File searchInModule(File moduleDir, String packagePath, String fileName) {
